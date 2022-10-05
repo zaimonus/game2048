@@ -1,79 +1,108 @@
 import random
-import numpy
+
+import numpy as np
 
 
-class Directions:
+class Direction:
     UP = 1
     DOWN = 2
+    LEFT = 3
     RIGHT = 4
-    LEFT = 8
 
 
-class Field:
+class Game2048:
 
-    def __init__(self) -> None:
-        self.field = numpy.zeros((4, 4), dtype=int)
-        self.chances = {
-            2: 0.75,
-            4: 0.20,
-            8: 0.03,
-            16: 0.015,
-            32: 0.005
+    def __init__(self, uuid):
+        self.uuid = uuid
+        self.nodes = np.zeros((4, 4))
+        self.items = [2, 4, 8, 16, 32, 64]
+        self.chances = [90.0, 9.0, 0.4, 0.3, 0.2, 0.1]
+        self.spawn()
+        self.spawn()
+
+    def as_dict(self):
+        return {
+            'uuid': str(self.uuid.int),
+            'game_over': self.game_over
         }
 
-    def start(self):
-        self.spawn_node()
-        self.spawn_node()
-
+    @property
     def game_over(self):
-        return numpy.count_nonzero(self.field) == 16
+        if np.count_nonzero(self.nodes) == 16:
+            return not self.merge_able()
+        else:
+            return False
 
-    def spawn_node(self):
-        free_nodes = (self.field == 0).nonzero()
-        coordinates = [(x, y) for x, y in zip(free_nodes[0], free_nodes[1])]
-        coord = random.choice(coordinates)
-        values = list(self.chances.keys())
-        weights = list(self.chances.values())
-        new_node = random.choices(values, weights)[0]
-        self.field[coord] = new_node
+    def spawn(self):
+        random_index = random.choice(np.rot90(np.nonzero(self.nodes == 0)))
+        x, y = random_index
+        self.nodes[x, y] = random.choices(population=self.items, weights=self.chances)[0]
 
-    def action(self, direction):
-        if direction == Directions.UP:
-            self.field = numpy.rot90(self.field, k=1)
-            self.merge_left()
-            self.align_left()
-            self.field = numpy.rot90(self.field, k=-1)
-        if direction == Directions.DOWN:
-            self.field = numpy.rot90(self.field, k=-1)
-            self.merge_left()
-            self.align_left()
-            self.field = numpy.rot90(self.field, k=1)
-        if direction == Directions.RIGHT:
-            self.field = numpy.flip(self.field)
-            self.merge_left()
-            self.align_left()
-            self.field = numpy.flip(self.field)
-        if direction == Directions.LEFT:
-            self.merge_left()
-            self.align_left()
+    def merge_able(self):
+        merge = False
+        merge = merge or self.merge_able_left()
+        self.nodes = np.rot90(self.nodes)
+        merge = merge or self.merge_able_left()
+        self.nodes = np.rot90(self.nodes)
+        merge = merge or self.merge_able_left()
+        self.nodes = np.rot90(self.nodes)
+        merge = merge or self.merge_able_left()
+        self.nodes = np.rot90(self.nodes)
+        return merge
 
-    def align_left(self):
-        new = list()
-        for i in range(len(self.field)):
-            new_line = list()
-            for j in range(len(self.field[i])):
-                if self.field[i, j] != 0:
-                    new_line.append(self.field[i, j])
-            while len(new_line) < 4:
-                new_line.append(0)
-            new.append(new_line)
-        self.field = numpy.asarray(new)
+    def merge_able_left(self):
+        merge = False
+        shape = self.nodes.shape
+        for i in range(shape[0]):
+            for j in range(1, shape[1]):
+                v1 = self.nodes[i, j - 1]
+                v2 = self.nodes[i, j]
+                if v1 == v2:
+                    merge = True
+                    break
+            if merge:
+                break
+        return merge
+
+    def move(self, direction):
+        match direction:
+            case Direction.LEFT:
+                self.merge_left()
+                self.align_left()
+            case Direction.RIGHT:
+                self.nodes = np.flip(self.nodes)
+                self.merge_left()
+                self.align_left()
+                self.nodes = np.flip(self.nodes)
+            case Direction.UP:
+                self.nodes = np.rot90(self.nodes, k=1)
+                self.merge_left()
+                self.align_left()
+                self.nodes = np.rot90(self.nodes, k=-1)
+            case Direction.DOWN:
+                self.nodes = np.rot90(self.nodes, k=-1)
+                self.merge_left()
+                self.align_left()
+                self.nodes = np.rot90(self.nodes, k=1)
+        self.spawn()
 
     def merge_left(self):
-        for i in range(len(self.field)):
-            for j in range(1, len(self.field[i])):
-                a = self.field[i, j - 1]
-                b = self.field[i, j]
-                if a == b and a != 0:
-                    self.field[i, j - 1] = a + b
-                    self.field[i, j] = 0
+        shape = self.nodes.shape
+        for i in range(shape[0]):
+            for j in range(1, shape[1]):
+                v1 = self.nodes[i, j - 1]
+                v2 = self.nodes[i, j]
+                if v1 == v2:
+                    self.nodes[i, j] = 0
+                    self.nodes[i, j - 1] = v1 + v2
+
+    def align_left(self):
+        shape = self.nodes.shape
+        for i in range(shape[0]):
+            empty_index = 0
+            for j in range(shape[1]):
+                v = self.nodes[i, j]
+                if v != 0:
+                    self.nodes[i, j] = 0
+                    self.nodes[i, empty_index] = v
+                    empty_index = empty_index + 1
